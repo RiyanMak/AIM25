@@ -10,8 +10,8 @@ NeuroCam is an innovative AI-powered system designed to aid in the early detecti
 #### Setup Instructions
 1. Clone the repository:
    ```
-   git clone https://github.com/[username]/neurocam.git
-   cd neurocam
+   git clone https://github.com/[username]/AIM25.git
+   cd AIM25
    ```
 
 2. Install dependencies:
