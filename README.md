@@ -51,6 +51,9 @@ NeuroCam is an innovative AI-powered system designed to aid in the early detecti
 
 7. **Merge to main** after receiving approval from at least one other team member
 
+8. **Download Dependecies** Have python 3.9.13 as your primary python version
+   - If you are using venv use pip install -r requirements.txt
+   - if you are using conda use conda install --file requirements.txt (you might run into errors so install pip and the do pip install -r requirements.txt)
 
 
 ### Resources and References
