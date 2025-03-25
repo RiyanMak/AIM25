@@ -1,0 +1,16 @@
+torch>=2.0.0 #important pytorch libraries   
+torchvision>=0.15.0
+
+opencv-python>=4.7.0 
+mediapipe>=0.9.0  # For facial landmark detection
+pillow>=9.4.0  # For image processing
+
+# Data Processing
+numpy>=1.22.0
+pandas>=1.5.0
+scipy>=1.10.0
+scikit-learn>=1.2.0  # For metrics and preprocessing
+
+# Utilities
+tqdm>=4.64.0  # For progress bars
+pyyaml>=6.0  # For configuration management
