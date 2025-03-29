@@ -250,8 +250,8 @@ def main():
         ]),
     }
     
-    # Paths (adjust these to your system)
-    data_dir = 'path_to_raf_db_dataset'  # Base directory for the dataset
+
+    data_dir = '/Users/riyan/Desktop/archive'  # Base directory for the dataset
     label_file = os.path.join(data_dir, 'list_partition_label.txt')  # Label file path
     
     # Create datasets
