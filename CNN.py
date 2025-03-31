@@ -117,8 +117,7 @@ class RAFDBDataset(Dataset):
         
         # Read the label file
         # Format is expected to be: image_name emotion_label
-        self.labels_df = pd.read_csv(label_file, sep=' ', header=None, 
-                                     names=['image_name', 'emotion'])
+        self.labels_df = pd.read_csv(label_file)  # Remove the sep=' ', header=None, names parameters
         
         # Subset to training or testing
         subset = 'train' if is_train else 'test'
@@ -129,8 +128,8 @@ class RAFDBDataset(Dataset):
         # In a real application, you would use consecutive video frames
         self.sequences = []
         for index, row in self.labels_df.iterrows():
-            image_name = row['image_name']
-            emotion = row['emotion'] - 1  # Convert 1-indexed to 0-indexed
+            image_name = row['image']       # Changed from 'image_name' to 'image'
+            emotion = row['label'] - 1      # Changed from 'emotion' to 'label'
             self.sequences.append((image_name, emotion))
             
         # For landmark features, we would load them from a file
@@ -142,7 +141,7 @@ class RAFDBDataset(Dataset):
     
     def __getitem__(self, idx):
         image_name, emotion = self.sequences[idx]
-        img_path = os.path.join(self.root_dir, 'aligned', image_name)
+        img_path = os.path.join(self.root_dir, 'DATASET', 'train', image_name)
         
         # Load image
         image = Image.open(img_path).convert('RGB')
@@ -252,8 +251,8 @@ def main():
     
 
     data_dir = '/Users/riyan/Desktop/archive'  # Base directory for the dataset
-    label_file = os.path.join(data_dir, 'list_partition_label.txt')  # Label file path
-    
+    label_file = os.path.join(data_dir, 'train_labels.csv')  # Label file path
+        
     # Create datasets
     train_dataset = RAFDBDataset(
         root_dir=data_dir,
