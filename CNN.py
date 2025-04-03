@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
+from torchvision.transforms import Resize
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
@@ -77,21 +78,25 @@ class RAFDBDataset(Dataset):
         self.is_train = is_train
         self.seq_length = seq_length
         
-        # Read the label file
-        # Format is expected to be: image_name emotion_label
-        self.labels_df = pd.read_csv(label_file)  # Remove the sep=' ', header=None, names parameters
+        # Read the label file using the correct path for train or test
+        if is_train:
+            label_path = os.path.join(root_dir, 'train_labels.csv')
+        else:
+            label_path = os.path.join(root_dir, 'test_labels.csv')
+            
+        print(f"Using label file: {label_path}")
+        self.labels_df = pd.read_csv(label_path)
         
-        # Subset to training or testing
-        subset = 'train' if is_train else 'test'
-        self.labels_df = self.labels_df[self.labels_df['image_name'].str.contains(subset)]
+        # Print the first few rows to debug
+        print("Label file contents (first 5 rows):")
+        print(self.labels_df.head())
         
         # Generate frame sequences
         # For simplicity, we'll repeat the same image to create a sequence
-        # In a real application, you would use consecutive video frames
         self.sequences = []
         for index, row in self.labels_df.iterrows():
-            image_name = row['image']       # Changed from 'image_name' to 'image'
-            emotion = row['label'] - 1      # Changed from 'emotion' to 'label'
+            image_name = row['image']
+            emotion = row['label'] - 1  # Convert 1-indexed to 0-indexed
             self.sequences.append((image_name, emotion))
             
         # For landmark features, we would load them from a file
@@ -103,7 +108,26 @@ class RAFDBDataset(Dataset):
     
     def __getitem__(self, idx):
         image_name, emotion = self.sequences[idx]
-        img_path = os.path.join(self.root_dir, 'DATASET', 'train', image_name)
+        
+        # Determine the correct directory (train or test)
+        img_dir = 'train' if self.is_train else 'test'
+        
+        # The key fix: use the emotion label (1-7) as the subdirectory
+        # Convert emotion from 0-indexed back to 1-indexed for directory naming
+        category_dir = str(emotion + 1)
+        
+        # Build the path with the category subdirectory
+        img_path = os.path.join(self.root_dir, 'DATASET', img_dir, category_dir, image_name)
+        
+        # Strip the prefix if needed (remove "train_" or "test_" from filename)
+        if not os.path.exists(img_path):
+            if image_name.startswith('train_') or image_name.startswith('test_'):
+                alt_img_name = image_name[image_name.find('_')+1:]
+                img_path = os.path.join(self.root_dir, 'DATASET', img_dir, category_dir, alt_img_name)
+        
+        # Final check if the file exists
+        if not os.path.exists(img_path):
+            raise FileNotFoundError(f"Could not find image: {image_name} in category {category_dir}")
         
         # Load image
         image = Image.open(img_path).convert('RGB')
@@ -112,8 +136,7 @@ class RAFDBDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         
-        # Create a sequence by repeating the same image (for demonstration)
-        # In real application, you would load consecutive frames
+        # Create a sequence by repeating the same image
         sequence = image.unsqueeze(0).repeat(self.seq_length, 1, 1, 1)
         
         # Get landmarks (random for demonstration)
@@ -211,29 +234,49 @@ def main():
         ]),
     }
     
-
     data_dir = '/Users/riyan/Desktop/archive'  # Base directory for the dataset
-    label_file = os.path.join(data_dir, 'train_labels.csv')  # Label file path
-        
-    # Create datasets
+    
+    # Print dataset structure to verify
+    print(f"Data directory: {data_dir}")
+    print(f"Data directory exists: {os.path.exists(data_dir)}")
+    
+    # List the structure of the DATASET directory
+    dataset_dir = os.path.join(data_dir, 'DATASET')
+    if os.path.exists(dataset_dir):
+        print(f"DATASET directory content:")
+        for item in os.listdir(dataset_dir):
+            path = os.path.join(dataset_dir, item)
+            if os.path.isdir(path):
+                print(f"  - {item}/ (directory)")
+                # Print a few files from this directory
+                try:
+                    files = os.listdir(path)[:3]
+                    for file in files:
+                        print(f"    - {file}")
+                except Exception as e:
+                    print(f"    Error listing directory: {e}")
+            else:
+                print(f"  - {item}")
+    
+    # Create datasets with smaller batch size
     train_dataset = RAFDBDataset(
         root_dir=data_dir,
-        label_file=label_file,
+        label_file=None,  # Will use train_labels.csv directly in the class
         transform=data_transforms['train'],
         is_train=True
     )
     
     val_dataset = RAFDBDataset(
         root_dir=data_dir,
-        label_file=label_file,
+        label_file=None,  # Will use test_labels.csv directly in the class
         transform=data_transforms['val'],
         is_train=False
     )
     
-    # Create dataloaders
+    # Create dataloaders with reduced batch size and workers
     dataloaders = {
-        'train': DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4),
-        'val': DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
+        'train': DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=2),
+        'val': DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=2)
     }
     
     # Initialize model
