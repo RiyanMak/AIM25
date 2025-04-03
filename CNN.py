@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import time
 import copy
 
+from LSTM import TemporalFusionModule
+
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -21,46 +23,21 @@ class CNNLSTMNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=7):  # RAF-DB has 7 emotion classes
         super(CNNLSTMNet, self).__init__()
         
+        self.temporal_fusion = TemporalFusionModule(num_classes=num_classes)
+
         # CNN layers for feature extraction
         self.cnn_layers = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=8, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.Conv2d(in_channels, 8, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(8, 16, 3, padding=1), nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
+            nn.MaxPool2d(2, 2)
         )
         
         # Calculate CNN output size (assuming 100x100 input images as in RAF-DB)
         self.cnn_output_size = 64 * 25 * 25  # For 100x100 input images after 2 max pooling layers
-        
-        # LSTM layer for temporal processing
-        self.lstm = nn.LSTM(
-            input_size=self.cnn_output_size,
-            hidden_size=128,
-            num_layers=1,
-            batch_first=True
-        )
-        
-        # Layer for static features (facial landmarks)
-        self.static_feature_size = 68 * 2  # 68 landmarks with x,y coordinates
-        self.static_features_fc = nn.Linear(self.static_feature_size, 64)
-        
-        # Feature fusion layers
-        self.fusion = nn.Sequential(
-            nn.Linear(128 + 64, 64),  # LSTM output + static features
-            nn.ReLU()
-        )
-        
-        # Output layer
-        self.output_layer = nn.Sequential(
-            nn.Linear(64, num_classes)  # Changed to 7 classes for RAF-DB
-        )
-    
+
     def forward(self, frames_sequence, facial_landmarks):
         batch_size, seq_len, channels, height, width = frames_sequence.size()
         
@@ -80,22 +57,7 @@ class CNNLSTMNet(nn.Module):
         
         # Stack the CNN outputs to create a sequence
         cnn_sequence = torch.stack(cnn_output, dim=1)
-        
-        # Process the sequence with LSTM
-        lstm_out, _ = self.lstm(cnn_sequence)
-        
-        # Take the last output from LSTM
-        lstm_out = lstm_out[:, -1, :]
-        
-        # Process static features (facial landmarks)
-        static_features = self.static_features_fc(facial_landmarks)
-        
-        # Join features
-        combined_features = torch.cat((lstm_out, static_features), dim=1)
-        fused_features = self.fusion(combined_features)
-        
-        # Generate output
-        output = self.output_layer(fused_features)
+        output = self.temporal_fusion(cnn_sequence, facial_landmarks)
         
         return output
 
@@ -325,6 +287,8 @@ def main():
     
     print("\nClassification Report:")
     print(classification_report(all_labels, all_preds, target_names=emotion_labels))
+
+
 
 if __name__ == "__main__":
     main()
