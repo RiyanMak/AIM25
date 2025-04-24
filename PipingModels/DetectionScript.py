@@ -100,7 +100,8 @@ class FacialFeatureExtractor:
             cheek_raise_left = np.linalg.norm(points[117] - points[123])
             cheek_raise_right = np.linalg.norm(points[346] - points[352])
             brow_movement = np.linalg.norm(points[9] - points[337])
-            features['facial_mobility'] = (cheek_raise_left + cheek_raise_right + brow_movement) / 3
+            # Add after calculating facial_mobility
+            features['facial_mobility'] = min(1.0, features['facial_mobility'])
             
             # 4. Mask face score - combined measure based on research findings
             # Higher value indicates more PD-like features
@@ -152,7 +153,7 @@ class JitterCalculator:
         if jitter_values:
             avg_jitter = np.mean(jitter_values)
             # Scale to 0-1 range for easier interpretation
-            scaled_jitter = min(1.0, avg_jitter * 100.0)
+            scaled_jitter = min(1.0, avg_jitter * 10.0)  # Even more aggressive reduction
             return scaled_jitter
         else:
             return 0.0
@@ -337,7 +338,7 @@ def run_pd_detection(model_path=None):
     pd_system = PDDetectionSystem(model_path)
     
     # Open webcam
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     if not cap.isOpened():
         print("Could not open webcam")
         return
@@ -450,7 +451,7 @@ def run_pd_detection(model_path=None):
 if __name__ == "__main__":
     # Path to your trained emotion recognition model
     # This will be created by running the training script
-    model_path = "/Users/riyan/Desktop/archive/models/best_emotion_model.pth"
+    model_path = "./PipingModels/best_emotion_model.pth"
     
     # You can uncomment this if you want to run detection without training first
     # (will use facial features only, without emotion recognition)
