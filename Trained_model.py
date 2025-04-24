@@ -122,6 +122,7 @@ def main():
 
         print(f"Epoch {epoch+1}, Loss: {running_loss / len(train_loader)}")
 
+    torch.save(model, 'facial_cnn_full.pth')
     model.eval()
     all_preds = []
     all_labels = []
