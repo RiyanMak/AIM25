@@ -1910,4 +1910,3 @@ class NeurologicalDisorderDetectionSystem:
             'detection_confidence': detection_confidence,
             'trend': trend
         }
-    
