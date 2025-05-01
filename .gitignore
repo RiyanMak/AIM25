@@ -1,2 +1,7 @@
-**/.venv/
+# Python virtual environments
+.venv/
+venv/
+ENV/
 **/__pycache__/
+**/*.so
+**/*.dylib
