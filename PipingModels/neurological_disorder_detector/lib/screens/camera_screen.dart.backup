@@ -1,0 +1,347 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
+import '../providers/detector_provider.dart';
+import 'results_screen.dart';
+
+class CameraScreen extends StatefulWidget {
+  const CameraScreen({Key? key}) : super(key: key);
+
+  @override
+  _CameraScreenState createState() => _CameraScreenState();
+}
+
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+  List<CameraDescription>? cameras;
+  CameraController? controller;
+  bool _isCameraInitialized = false;
+  bool _isCameraPermissionGranted = false;
+  
+  // Camera options
+  double _minAvailableZoom = 1.0;
+  double _maxAvailableZoom = 1.0;
+  double _currentZoomLevel = 1.0;
+  FlashMode _flashMode = FlashMode.off;
+  
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _requestCameraPermission();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final CameraController? cameraController = controller;
+
+    // App state changed before camera was initialized
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive) {
+      // Free up memory when camera not active
+      cameraController.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      // Reinitialize the camera with same properties
+      _initializeCamera(cameraController.description);
+    }
+  }
+
+  Future<void> _requestCameraPermission() async {
+    final status = await Permission.camera.request();
+    setState(() {
+      _isCameraPermissionGranted = status == PermissionStatus.granted;
+    });
+    
+    if (_isCameraPermissionGranted) {
+      _initCameraList();
+    }
+  }
+
+  Future<void> _initCameraList() async {
+    try {
+      cameras = await availableCameras();
+      if (cameras != null && cameras!.isNotEmpty) {
+        await _initializeCamera(cameras![0]); // Initialize with back camera
+      }
+    } catch (e) {
+      debugPrint('Error getting cameras: $e');
+    }
+  }
+
+  Future<void> _initializeCamera(CameraDescription cameraDescription) async {
+    final CameraController cameraController = CameraController(
+      cameraDescription,
+      ResolutionPreset.medium, // Medium quality works well for most devices
+      enableAudio: false,
+      imageFormatGroup: Platform.isAndroid
+          ? ImageFormatGroup.yuv420
+          : ImageFormatGroup.bgra8888,
+    );
+
+    controller = cameraController;
+
+    try {
+      await cameraController.initialize();
+      
+      // Get available zoom range
+      await Future.wait([
+        cameraController
+            .getMaxZoomLevel()
+            .then((value) => _maxAvailableZoom = value),
+        cameraController
+            .getMinZoomLevel()
+            .then((value) => _minAvailableZoom = value),
+      ]);
+
+      _currentZoomLevel = 1.0;
+      
+      setState(() {
+        _isCameraInitialized = true;
+      });
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+    }
+  }
+
+  Future<void> _takePicture() async {
+    final CameraController? cameraController = controller;
+    
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return;
+    }
+    
+    try {
+      // Get detector provider
+      final detectorProvider = Provider.of<DetectorProvider>(context, listen: false);
+      
+      // Take picture
+      final XFile picture = await cameraController.takePicture();
+      
+      // Process image
+      await detectorProvider.processImageFromCamera(picture);
+      
+      // Navigate to results screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ResultsScreen(),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error taking picture: $e');
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    if (cameras == null || cameras!.isEmpty) {
+      return;
+    }
+    
+    // Get current camera index
+    final int currentIndex = cameras!.indexOf(controller!.description);
+    final int newIndex = (currentIndex + 1) % cameras!.length;
+    
+    // Set new camera
+    await _initializeCamera(cameras![newIndex]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Neurological Disorder Detection'),
+        actions: [
+          // Gallery button
+          IconButton(
+            icon: const Icon(Icons.photo_library),
+            onPressed: () async {
+              final detectorProvider = 
+                  Provider.of<DetectorProvider>(context, listen: false);
+              await detectorProvider.pickAndProcessImage();
+              
+              if (detectorProvider.imageFile != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ResultsScreen(),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+      body: _isCameraPermissionGranted
+          ? _isCameraInitialized
+              ? _buildCameraPreview()
+              : const Center(child: CircularProgressIndicator())
+          : _buildPermissionDenied(),
+    );
+  }
+
+  Widget _buildCameraPreview() {
+    final mediaSize = MediaQuery.of(context).size;
+    final scale = 1 / 
+        (controller!.value.aspectRatio * mediaSize.aspectRatio);
+        
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              // Camera preview
+              Transform.scale(
+                scale: scale,
+                alignment: Alignment.center,
+                child: CameraPreview(controller!),
+              ),
+              
+              // Controls overlay
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Flash button
+                      IconButton(
+                        icon: Icon(
+                          _flashMode == FlashMode.off
+                              ? Icons.flash_off
+                              : Icons.flash_on,
+                          color: Colors.white,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _flashMode = _flashMode == FlashMode.off
+                                ? FlashMode.torch
+                                : FlashMode.off;
+                            controller?.setFlashMode(_flashMode);
+                          });
+                        },
+                      ),
+                      
+                      // Capture button
+                      GestureDetector(
+                        onTap: _takePicture,
+                        child: Container(
+                          height: 70,
+                          width: 70,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 5,
+                            ),
+                          ),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Switch camera button
+                      IconButton(
+                        icon: const Icon(
+                          Icons.flip_camera_ios,
+                          color: Colors.white,
+                        ),
+                        onPressed: _switchCamera,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Zoom control
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Zoom',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      Slider(
+                        value: _currentZoomLevel,
+                        min: _minAvailableZoom,
+                        max: _maxAvailableZoom,
+                        activeColor: Colors.white,
+                        inactiveColor: Colors.white30,
+                        onChanged: (value) async {
+                          setState(() {
+                            _currentZoomLevel = value;
+                          });
+                          await controller?.setZoomLevel(value);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPermissionDenied() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Camera permission denied',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _requestCameraPermission,
+            child: const Text('Request Permission'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ResultsScreen(),
+                ),
+              );
+            },
+            child: const Text('Use Gallery Instead'),
+          ),
+        ],
+      ),
+    );
+  }
+}
